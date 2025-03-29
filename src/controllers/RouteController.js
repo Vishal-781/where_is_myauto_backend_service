@@ -1,67 +1,82 @@
-const Route = require('../models/RouteModel');
-const Vehicle = require('../models/VehicleModel');
-const wss = require('../server'); // Import WebSocket server
+const Route = require('../models/Route');
 
-// Function to calculate ETAs for all locations
-const calculateETAs = (currentLocationIndex, locations, currentTime) => {
-  const etas = [];
-  let eta = currentTime; // Start with the current time
-
-  // Iterate through the locations starting from the current location
-  for (let i = currentLocationIndex; i < locations.length; i++) {
-    etas.push({
-      location_id: locations[i].location_id,
-      name: locations[i].name,
-      eta: new Date(eta) // Convert to Date object
-    });
-
-    // Add 5 minutes for the next location
-    eta += 5 * 60 * 1000; // 5 minutes in milliseconds
-  }
-
-  return etas;
-};
-
-exports.updateLocation = async (req, res) => {
-  try {
-    const { vehicleId, latitude, longitude, currentLocationIndex } = req.body;
-
-    // Check if the vehicle exists
-    const vehicle = await Vehicle.findById(vehicleId);
-    if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found' });
+// Controller for route-related operations
+const routeController = {
+  // Get all routes
+  getAllRoutes: async (req, res) => {
+    try {
+      const routes = await Route.find();
+      res.json(routes);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: 'Server error' });
     }
+  },
 
-    // Fetch the route for the vehicle
-    const route = await Route.findOne({ vehicle_id: vehicleId });
-    if (!route) {
-      return res.status(404).json({ error: 'Route not found' });
-    }
-
-    // Get the current time
-    const currentTime = new Date().getTime(); // Current time in milliseconds
-
-    // Calculate ETAs for all locations
-    const etas = calculateETAs(currentLocationIndex, route.locations, currentTime);
-
-    // Prepare the update message
-    const updateMessage = JSON.stringify({
-      vehicleId,
-      latitude,
-      longitude,
-      currentLocationIndex,
-      etas
-    });
-
-    // Broadcast the update to all connected clients
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(updateMessage);
+  // Get a specific route by routeNumber
+  getRouteByNumber: async (req, res) => {
+    try {
+      const route = await Route.findOne({ routeNumber: req.params.routeNumber });
+      
+      if (!route) {
+        return res.status(404).json({ message: 'Route not found' });
       }
-    });
+      
+      res.json(route);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
 
-    res.status(200).json({ message: 'Location updated', etas });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  // Create a new route (for admin purposes)
+  createRoute: async (req, res) => {
+    try {
+      const { routeNumber, name, color, stops } = req.body;
+      
+      // Check if route already exists
+      const existingRoute = await Route.findOne({ routeNumber });
+      if (existingRoute) {
+        return res.status(400).json({ message: 'Route already exists' });
+      }
+      
+      const newRoute = new Route({
+        routeNumber,
+        name,
+        color,
+        stops
+      });
+      
+      const savedRoute = await newRoute.save();
+      res.status(201).json(savedRoute);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  // Update a route (for admin purposes)
+  updateRoute: async (req, res) => {
+    try {
+      const { routeNumber } = req.params;
+      const { name, color, stops } = req.body;
+      
+      const route = await Route.findOne({ routeNumber });
+      if (!route) {
+        return res.status(404).json({ message: 'Route not found' });
+      }
+      
+      route.name = name || route.name;
+      route.color = color || route.color;
+      route.stops = stops || route.stops;
+      
+      const updatedRoute = await route.save();
+      res.json(updatedRoute);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: 'Server error' });
+    }
   }
 };
+
+module.exports = routeController;
